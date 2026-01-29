@@ -1,0 +1,392 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Anti-fascist Films</title>
+  <style>
+    :root {
+      --bg: #fff;
+      --ink: #111;
+      --muted: #666;
+      --line: #ddd;
+      --chip: #f3f3f3;
+      --link: #0b57d0;
+    }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      color: var(--ink);
+      background: var(--bg);
+    }
+    header {
+      padding: 18px 16px 10px;
+      border-bottom: 1px solid var(--line);
+      position: sticky;
+      top: 0;
+      background: rgba(255,255,255,0.92);
+      backdrop-filter: blur(8px);
+      z-index: 5;
+    }
+    h1 {
+      margin: 0 0 10px;
+      font-size: 18px;
+      font-weight: 650;
+    }
+    .controls {
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      gap: 10px;
+      align-items: center;
+    }
+    input[type="search"] {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      font-size: 14px;
+    }
+    select, button {
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fff;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    main { padding: 12px 16px 24px; }
+    .meta {
+      margin: 10px 0 14px;
+      color: var(--muted);
+      font-size: 13px;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .chip {
+      background: var(--chip);
+      padding: 4px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    thead th {
+      text-align: left;
+      font-size: 12px;
+      color: var(--muted);
+      letter-spacing: .02em;
+      padding: 10px 10px;
+      background: #fafafa;
+      border-bottom: 1px solid var(--line);
+      vertical-align: bottom;
+    }
+    tbody td {
+      padding: 10px 10px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+      font-size: 14px;
+      line-height: 1.35;
+    }
+    tbody tr:hover { background: #fcfcff; }
+    .poster {
+      width: 44px;
+      height: 66px;
+      border-radius: 6px;
+      border: 1px solid var(--line);
+      background: #f6f6f6;
+      object-fit: cover;
+      display: block;
+    }
+    .poster.placeholder {
+      display: grid;
+      place-items: center;
+      color: var(--muted);
+      font-size: 10px;
+      text-align: center;
+      padding: 4px;
+    }
+    .title {
+      font-weight: 650;
+      margin-bottom: 2px;
+    }
+    .sub {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .wrap { max-width: 1100px; margin: 0 auto; }
+    a { color: var(--link); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .small { font-size: 12px; color: var(--muted); }
+    @media (max-width: 720px) {
+      .controls { grid-template-columns: 1fr 1fr; }
+      .controls button { grid-column: 1 / -1; }
+      thead th:nth-child(4), tbody td:nth-child(4) { display: none; } /* hide summary on small screens */
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <h1>Anti-fascist films</h1>
+      <div class="controls">
+        <input id="q" type="search" placeholder="Search title, country, summary…" autocomplete="off" />
+        <select id="sort">
+          <option value="year-desc">Year ↓</option>
+          <option value="year-asc">Year ↑</option>
+          <option value="title-asc">Title A–Z</option>
+          <option value="title-desc">Title Z–A</option>
+        </select>
+        <button id="reloadPosters" type="button" title="Try to fetch thumbnails again">
+          Reload posters
+        </button>
+      </div>
+      <div class="meta" id="meta">
+        <span class="chip" id="countChip">0 items</span>
+        <span class="small">Poster thumbnails are fetched from Wikipedia when available.</span>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <div class="wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:70px;">Poster</th>
+            <th>Title</th>
+            <th style="width:90px;">Year</th>
+            <th style="width:200px;">Country</th>
+            <th>Summary</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <p class="small" style="margin-top:10px;">
+      </p>
+    </div>
+  </main>
+
+  <script type="module">
+    const $ = (sel) => document.querySelector(sel)
+
+    // --- Load data ---
+    const res = await fetch('anti-fascist-films.json')
+    if (!res.ok) throw new Error(`Failed to fetch anti-fascist-films.json (${res.status})`)
+    let {metadata, films} = await res.json()
+
+    // Normalize a little (defensive)
+    films = films
+      .filter(x => x && x.title)
+      .map(x => ({
+        title: String(x.title ?? '').trim(),
+        year: Number.isFinite(x.year) ? x.year : Number(x.year),
+        country: String(x.country ?? '').trim(),
+        summary: String(x.summary ?? '').trim(),
+        poster: null,
+        wikiUrl: null
+      }))
+
+    // --- Poster fetching from Wikipedia REST (no key) ---
+    // Uses: https://en.wikipedia.org/api/rest_v1/page/summary/{title}
+    // Falls back silently if missing.
+    const posterCacheKey = 'antifascist_poster_cache_v1'
+    const posterCache = loadPosterCache()
+
+    function loadPosterCache() {
+      try { return JSON.parse(localStorage.getItem(posterCacheKey)) ?? {} }
+      catch { return {} }
+    }
+
+    function savePosterCache() {
+      try { localStorage.setItem(posterCacheKey, JSON.stringify(posterCache)) }
+      catch {}
+    }
+
+    function wikiTitleGuess(filmTitle) {
+      // Some titles need disambiguation; this is a best-effort guess.
+      // You can hardcode exceptions here if needed.
+      const map = {
+        "Z": "Z (1969 film)"
+      }
+      return map[filmTitle] ?? filmTitle
+    }
+
+    async function fetchWikiSummary(title) {
+      const t = wikiTitleGuess(title)
+      const url = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(t)}`
+      const r = await fetch(url, { headers: { "accept": "application/json" } })
+      if (!r.ok) return null
+      return await r.json()
+    }
+
+    async function loadPostersBestEffort(list) {
+      // Concurrency limit so we don’t hammer Wikipedia
+      const concurrency = 6
+      let i = 0
+
+      async function worker() {
+        while (i < list.length) {
+          const idx = i++
+          const film = list[idx]
+          const key = film.title
+
+          // cache hit?
+          if (posterCache[key]) {
+            film.poster = posterCache[key].poster ?? null
+            film.wikiUrl = posterCache[key].wikiUrl ?? null
+            continue
+          }
+
+          // fetch
+          const data = await fetchWikiSummary(film.title).catch(() => null)
+          const poster =
+            data?.thumbnail?.source ??
+            data?.originalimage?.source ??
+            null
+
+          const wikiUrl =
+            data?.content_urls?.desktop?.page ??
+            null
+
+          film.poster = poster
+          film.wikiUrl = wikiUrl
+
+          posterCache[key] = { poster, wikiUrl, ts: Date.now() }
+          savePosterCache()
+
+          // Update row if already rendered
+          updatePosterCell(film)
+        }
+      }
+
+      await Promise.all(Array.from({ length: concurrency }, worker))
+    }
+
+    // --- Rendering ---
+    const rowsEl = $('#rows')
+    const qEl = $('#q')
+    const sortEl = $('#sort')
+    const countChip = $('#countChip')
+
+    function sortFilms(list) {
+      const mode = sortEl.value
+      const byTitle = (a, b) => a.title.localeCompare(b.title)
+      const byYear = (a, b) => (a.year ?? 0) - (b.year ?? 0)
+
+      const sorted = [...list]
+      if (mode === 'year-asc') sorted.sort(byYear)
+      else if (mode === 'year-desc') sorted.sort((a,b) => byYear(b,a))
+      else if (mode === 'title-desc') sorted.sort((a,b) => byTitle(b,a))
+      else sorted.sort(byTitle)
+      return sorted
+    }
+
+    function matchesQuery(f, q) {
+      if (!q) return true
+      const hay = `${f.title} ${f.country} ${f.summary}`.toLowerCase()
+      return hay.includes(q)
+    }
+
+    function posterCellHtml(f) {
+      if (f.poster) {
+        const img = `<img class="poster" alt="Poster for ${escapeHtml(f.title)}" loading="lazy" src="${f.poster}">`
+        return f.wikiUrl ? `<a href="${f.wikiUrl}" target="_blank" rel="noopener">${img}</a>` : img
+      }
+      // placeholder
+      return `<div class="poster placeholder" aria-label="No poster available">no poster</div>`
+    }
+
+    function filmRowHtml(f) {
+      const titleHtml = f.wikiUrl
+        ? `<a href="${f.wikiUrl}" target="_blank" rel="noopener">${escapeHtml(f.title)}</a>`
+        : escapeHtml(f.title)
+
+      const year = Number.isFinite(f.year) ? f.year : ''
+      return `
+        <tr data-title="${escapeAttr(f.title)}">
+          <td>${posterCellHtml(f)}</td>
+          <td>
+            <div class="title">${titleHtml}</div>
+          </td>
+          <td>${escapeHtml(String(year))}</td>
+          <td>${escapeHtml(f.country)}</td>
+          <td>${escapeHtml(f.summary)}</td>
+        </tr>
+      `
+    }
+
+    function render() {
+      const q = qEl.value.trim().toLowerCase()
+      const filtered = sortFilms(films.filter(f => matchesQuery(f, q)))
+      rowsEl.innerHTML = filtered.map(filmRowHtml).join('')
+      countChip.textContent = `${filtered.length} item${filtered.length === 1 ? '' : 's'}`
+    }
+
+    function updatePosterCell(film) {
+      const tr = rowsEl.querySelector(`tr[data-title="${cssEscape(film.title)}"]`)
+      if (!tr) return
+      tr.children[0].innerHTML = posterCellHtml(film)
+      // also update title link if wikiUrl was discovered later
+      const titleCell = tr.children[1]
+      const titleDiv = titleCell.querySelector('.title')
+      if (titleDiv) {
+        const titleHtml = film.wikiUrl
+          ? `<a href="${film.wikiUrl}" target="_blank" rel="noopener">${escapeHtml(film.title)}</a>`
+          : escapeHtml(film.title)
+        titleDiv.innerHTML = titleHtml
+      }
+    }
+
+    // --- Utilities ---
+    function escapeHtml(str) {
+      return String(str ?? '').replace(/[&<>"']/g, s => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      }[s]))
+    }
+    function escapeAttr(str) {
+      return escapeHtml(str).replace(/"/g, '&quot;')
+    }
+    function cssEscape(str) {
+      // minimal CSS escaping for attribute selection
+      return String(str).replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+    }
+
+    // --- Wire up UI ---
+    qEl.addEventListener('input', render)
+    sortEl.addEventListener('change', render)
+
+    $('#reloadPosters').addEventListener('click', async () => {
+      // Clear cache and try again
+      localStorage.removeItem(posterCacheKey)
+      for (const k of Object.keys(posterCache)) delete posterCache[k]
+      for (const f of films) { f.poster = null; f.wikiUrl = null }
+      render()
+      await loadPostersBestEffort(films)
+    })
+
+    // Initial render (fast, no posters yet)
+    render()
+
+    // Apply cached posters immediately
+    for (const f of films) {
+      const hit = posterCache[f.title]
+      if (hit) {
+        f.poster = hit.poster ?? null
+        f.wikiUrl = hit.wikiUrl ?? null
+      }
+    }
+    render()
+
+    // Then fetch missing posters in the background
+    const missing = films.filter(f => !f.poster)
+    loadPostersBestEffort(missing)
+  </script>
+</body>
+</html>
